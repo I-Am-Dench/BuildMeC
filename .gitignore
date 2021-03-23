@@ -1,0 +1,4 @@
+# Dirs and .json from testing if the script works
+src/
+bin/
+buildmec.json
