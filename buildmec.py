@@ -11,7 +11,6 @@ from typing import Final
 class bColors:
     WARNING = "\033[93m"
     ERROR   = "\033[91m"
-
     RESET   = "\033[0m"
 
 class OutType:
@@ -26,7 +25,8 @@ PREFIX = '-' if platform != 'win32' else '/'
 prefixed = lambda short, full: [PREFIX + short, (PREFIX*2) + full]
 
 def write_default_config():
-    default_data = { "bin-path": BIN_PATH, "src-path": SRC_PATH, "build-order": ["main.cpp"] }
+    default_out  = { OutType.FINAL: 'main' }
+    default_data = { "bin-path": BIN_PATH, "src-path": SRC_PATH, "build-order": ["main.cpp"], "out": default_out }
     with open(CONFIG_NAME, 'w+') as f:
         json.dump(default_data, f, indent=4)
 
@@ -64,8 +64,7 @@ def initialize():
         write_default_config()
 
     init_dirs(get_build_config())
-    # if not path.exists('src'): os.makedirs('src')
-    # if not path.exists('bin'): os.makedirs('bin')
+
     if not path.exists(SRC_PATH + "main.cpp"): write_starter_code()
     quit()
 
