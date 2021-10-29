@@ -6,16 +6,21 @@ import os
 import subprocess
 from os import path
 from sys import platform
+from typing import Final
 
 class bColors:
     WARNING = "\033[93m"
     ERROR   = "\033[91m"
 
+    RESET   = "\033[0m"
+
+class OutType:
+    FINAL = 'FINAL'
+
 CONFIG_NAME = "buildmec.json"
 BIN_PATH    = "bin/"
 SRC_PATH    = "src/"
 VERSION     = "1.0"
-BIN_OUT     = BIN_PATH + "main.exe"
 
 PREFIX = '-' if platform != 'win32' else '/'
 prefixed = lambda short, full: [PREFIX + short, (PREFIX*2) + full]
@@ -38,24 +43,36 @@ def reset_json():
     if (ans.lower() == 'yes'):
         write_default_config()
 
-def initialize():
-    if path.exists(CONFIG_NAME):
-        reset_json()
-    else:
-        write_default_config()
-    if not path.exists('src'): os.makedirs('src')
-    if not path.exists('bin'): os.makedirs('bin')
-    if not path.exists(SRC_PATH + "main.cpp"): write_starter_code()
-    quit()
-
 def get_build_config():
     if not path.exists(CONFIG_NAME):
-        print(f"{bColors.ERROR}BuildMeC is not initialized.")
+        print(f"{bColors.ERROR}BuildMeC is not initialized.{bColors.RESET}")
         return {}
     else:
         with open(CONFIG_NAME) as f:
             data = json.load(f)
             return data
+
+def init_dirs(config):
+    dirs = [ config['src-path'], config['bin-path'] ]
+    for dir in dirs:
+        if not path.exists(dir): os.makedirs(dir)
+
+def initialize():
+    if path.exists(CONFIG_NAME):
+        reset_json()
+    else:
+        write_default_config()
+
+    init_dirs(get_build_config())
+    # if not path.exists('src'): os.makedirs('src')
+    # if not path.exists('bin'): os.makedirs('bin')
+    if not path.exists(SRC_PATH + "main.cpp"): write_starter_code()
+    quit()
+
+def get_out_path(config, ot):
+    bin_path = config['bin-path']
+    out = config['out'][ot]
+    return bin_path + out
 
 def execute_in_shell(cmd):
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -67,6 +84,9 @@ def compile(config):
     build_order = config['build-order']
     build_order.reverse()
     src_path = config['src-path']
+    bin_out = get_out_path(config, OutType.FINAL)
+
+    init_dirs(config)
 
     bash_cmd = ['g++']
     for source_file in build_order:
@@ -74,17 +94,17 @@ def compile(config):
         if path.exists(source_with_path):
             bash_cmd.append(source_with_path)
         else:
-            print(f"{bColors.WARNING}'{source_with_path}' does not exists. Not adding to compilation.")
-    bash_cmd.extend(['-o', BIN_OUT])
+            print(f"{bColors.WARNING}'{source_with_path}' does not exists. Not adding to compilation.{bColors.RESET}")
+    bash_cmd.extend(['-o', bin_out])
 
     if len(bash_cmd) <= 3: quit() # Quit if no cpp files added to path
 
     execute_in_shell(bash_cmd)
-    if path.exists(BIN_OUT):
-        execute_in_shell(['chmod', '+x', BIN_OUT])
+    if path.exists(bin_out):
+        execute_in_shell(['chmod', '+x', bin_out])
 
 def run_project(config):
-    os.system('./' + BIN_OUT)
+    os.system('./' + get_out_path(config, OutType.FINAL))
 
 ################################
 #=======>-----MAIN-----<=======#
