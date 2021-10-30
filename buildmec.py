@@ -5,7 +5,7 @@ import json
 import os
 import subprocess
 from os import path
-from sys import flags, platform
+from sys import platform
 
 class bColors:
     WARNING = "\033[93m"
@@ -16,9 +16,14 @@ class bColors:
 class OutType:
     FINAL = 'FINAL'
 
-TOOLS = {
-    'CPP': 'g++',
-    'C':   'gcc'
+class Toolchain:
+    def __init__(self, ext, toolchain):
+        self.extension = ext
+        self.toolchain = toolchain
+
+TOOLCHAINS = {
+    'cpp': Toolchain('cpp', 'g++'),
+    'c': Toolchain('c', 'gcc')
 }
 
 CONFIG_NAME = "buildmec.json"
@@ -34,24 +39,34 @@ perror = lambda msg: pcolor(msg, bColors.ERROR)
 pwarn  = lambda msg: pcolor(msg, bColors.WARNING)
 pmsg   = lambda msg: pcolor(msg, bColors.MESSAGE)
 
-def write_default_config():
+def write_default_config(toolchain):
+    tc = TOOLCHAINS.get(toolchain)
     default_out  = { OutType.FINAL: 'main' }
-    default_data = { "bin-path": BIN_PATH, "src-path": SRC_PATH, "build-order": ["main.cpp"], "out": default_out }
+    default_data = { "bin-path": BIN_PATH, "src-path": SRC_PATH, "build-order": [f"main.{tc.extension}"], "out": default_out }
+    
+    if toolchain == 'c':
+        default_data['comp'] = { "toolchain": tc.toolchain }
+
     with open(CONFIG_NAME, 'w+') as f:
         json.dump(default_data, f, indent=4)
 
-def write_starter_code():
-    with open(SRC_PATH + "main.cpp", 'a+') as f:
-        f.write("#include <iostream>\n\n")
-        f.write("int main() {\n")
-        f.write('    std::cout << "Hello world!" << std::endl;\n')
-        f.write("    return 0;\n")
-        f.write("}")
+def write_starter_code(toolchain):
+    include = "#include <iostream>" if toolchain == 'cpp' else "#include <stdio.h>"
+    mainsig = "int main()" if toolchain == 'cpp' else "int main(int argc, char *argv[])"
+    stdout  = 'std::cout << "Hello, world!" << std::endl;' if toolchain == 'cpp' else 'printf("Hello, world!\\n");'
+    tc = TOOLCHAINS.get(toolchain)
 
-def reset_json():
+    with open(SRC_PATH + f"main.{tc.extension}", 'w+') as f:
+        f.write(f"{include}\n\n")
+        f.write(f"{mainsig} {{\n")
+        f.write(f"    {stdout}\n")
+        f.write( "    return 0;\n")
+        f.write( "}")
+
+def reset_json(toolchain):
     ans = input("Restore buildmec.json to defaults? (Type 'YES' to continue) ")
     if (ans.lower() == 'yes'):
-        write_default_config()
+        write_default_config(toolchain)
 
 def get_build_config():
     if not path.exists(CONFIG_NAME):
@@ -67,15 +82,15 @@ def init_dirs(config):
     for dir in dirs:
         if not path.exists(dir): os.makedirs(dir)
 
-def initialize():
+def initialize(toolchain):
     if path.exists(CONFIG_NAME):
-        reset_json()
+        reset_json(toolchain)
     else:
-        write_default_config()
+        write_default_config(toolchain)
 
     init_dirs(get_build_config())
 
-    if not path.exists(SRC_PATH + "main.cpp"): write_starter_code()
+    if not path.exists(SRC_PATH + "main.cpp"): write_starter_code(toolchain)
     quit()
 
 def get_out_path(config, ot):
@@ -88,7 +103,9 @@ def get_tool_chain(config):
         comp = config['comp']
         tool = comp.get('toolchain', 'CPP')
         flags = comp.get('flags', '')
-        return TOOLS.get(tool, 'g++'), flags.split(' ')
+        valid_toolchains = map(lambda t: t.toolchain, TOOLCHAINS.values())
+        return tool if tool in valid_toolchains else 'g++', flags.split(' ')
+    return 'g++', []
 
 
 def execute_in_shell(cmd, show=True):
@@ -108,7 +125,7 @@ def compile(config):
     toolchain, flags = get_tool_chain(config)
 
     bash_cmd = [toolchain, *flags]
-    bash_cmd.remove('')
+    if '' in flags: bash_cmd.remove('')
     for source_file in build_order:
         source_with_path = src_path + source_file
         if path.exists(source_with_path):
@@ -132,14 +149,14 @@ def run_project(config):
 def main():
     parser = argparse.ArgumentParser(description="Simple cpp project builder.", prefix_chars=PREFIX)
     parser.add_argument(*prefixed('v', 'version'), action='version', version="BuildMeC " + VERSION)
-    parser.add_argument(*prefixed('i', 'init'), action='store_true', default=False, help="Creates the buildmec.json config file.")
+    parser.add_argument(*prefixed('i', 'init'), nargs='?', const='cpp', choices=TOOLCHAINS.keys(), help="Creates the buildmec.json config file.")
     parser.add_argument(*prefixed('c', 'compile'), action='store_true', help="Creates an object file inside the specified bin directory.")
     parser.add_argument(*prefixed('r', 'run'), action="store_true", default=False, help="Runs binary.")
 
     args = parser.parse_args()
     
     if args.init:
-        initialize()
+        initialize(args.init.lower())
 
     config = get_build_config()
 
