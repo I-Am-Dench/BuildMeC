@@ -5,24 +5,34 @@ import json
 import os
 import subprocess
 from os import path
-from sys import platform
-from typing import Final
+from sys import flags, platform
 
 class bColors:
     WARNING = "\033[93m"
     ERROR   = "\033[91m"
+    MESSAGE = "\033[90m"
     RESET   = "\033[0m"
 
 class OutType:
     FINAL = 'FINAL'
 
+TOOLS = {
+    'CPP': 'g++',
+    'C':   'gcc'
+}
+
 CONFIG_NAME = "buildmec.json"
 BIN_PATH    = "bin/"
 SRC_PATH    = "src/"
-VERSION     = "1.0"
+VERSION     = "1.1"
 
 PREFIX = '-' if platform != 'win32' else '/'
 prefixed = lambda short, full: [PREFIX + short, (PREFIX*2) + full]
+
+pcolor = lambda msg, col: print(f"{col}{msg}{bColors.RESET}")
+perror = lambda msg: pcolor(msg, bColors.ERROR)
+pwarn  = lambda msg: pcolor(msg, bColors.WARNING)
+pmsg   = lambda msg: pcolor(msg, bColors.MESSAGE)
 
 def write_default_config():
     default_out  = { OutType.FINAL: 'main' }
@@ -45,7 +55,7 @@ def reset_json():
 
 def get_build_config():
     if not path.exists(CONFIG_NAME):
-        print(f"{bColors.ERROR}BuildMeC is not initialized.{bColors.RESET}")
+        perror("BuildMeC is not initialized.")
         return {}
     else:
         with open(CONFIG_NAME) as f:
@@ -73,9 +83,18 @@ def get_out_path(config, ot):
     out = config['out'][ot]
     return bin_path + out
 
-def execute_in_shell(cmd):
+def get_tool_chain(config):
+    if 'comp' in config:
+        comp = config['comp']
+        tool = comp.get('toolchain', 'CPP')
+        flags = comp.get('flags', '')
+        return TOOLS.get(tool, 'g++'), flags.split(' ')
+
+
+def execute_in_shell(cmd, show=True):
+    if show: pmsg(" ".join(cmd))
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    output, error = process.communicate()
+    _, error = process.communicate()
     if error: print(error)
 
 def compile(config):
@@ -86,21 +105,23 @@ def compile(config):
     bin_out = get_out_path(config, OutType.FINAL)
 
     init_dirs(config)
+    toolchain, flags = get_tool_chain(config)
 
-    bash_cmd = ['g++']
+    bash_cmd = [toolchain, *flags]
+    bash_cmd.remove('')
     for source_file in build_order:
         source_with_path = src_path + source_file
         if path.exists(source_with_path):
             bash_cmd.append(source_with_path)
         else:
-            print(f"{bColors.WARNING}'{source_with_path}' does not exists. Not adding to compilation.{bColors.RESET}")
+            pwarn(f"'{source_with_path}' does not exists. Not adding to compilation.")
     bash_cmd.extend(['-o', bin_out])
 
     if len(bash_cmd) <= 3: quit() # Quit if no cpp files added to path
 
     execute_in_shell(bash_cmd)
     if path.exists(bin_out):
-        execute_in_shell(['chmod', '+x', bin_out])
+        execute_in_shell(['chmod', '+x', bin_out], show=False)
 
 def run_project(config):
     os.system('./' + get_out_path(config, OutType.FINAL))
@@ -113,7 +134,7 @@ def main():
     parser.add_argument(*prefixed('v', 'version'), action='version', version="BuildMeC " + VERSION)
     parser.add_argument(*prefixed('i', 'init'), action='store_true', default=False, help="Creates the buildmec.json config file.")
     parser.add_argument(*prefixed('c', 'compile'), action='store_true', help="Creates an object file inside the specified bin directory.")
-    parser.add_argument(*prefixed('r', 'run'), action="store_true", default=False, help="Runs binary once project is finished building.")
+    parser.add_argument(*prefixed('r', 'run'), action="store_true", default=False, help="Runs binary.")
 
     args = parser.parse_args()
     
