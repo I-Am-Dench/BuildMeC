@@ -13,9 +13,6 @@ class bColors:
     MESSAGE = "\033[90m"
     RESET   = "\033[0m"
 
-class OutType:
-    FINAL = 'FINAL'
-
 class Toolchain:
     def __init__(self, ext, toolchain):
         self.extension = ext
@@ -41,8 +38,8 @@ pmsg   = lambda msg: pcolor(msg, bColors.MESSAGE)
 
 def write_default_config(toolchain):
     tc = TOOLCHAINS.get(toolchain)
-    default_out  = { OutType.FINAL: 'main' }
-    default_data = { "bin-path": BIN_PATH, "src-path": SRC_PATH, "build-order": [f"main.{tc.extension}"], "out": default_out }
+    default_out  = { 'FINAL': 'main', 'obj-path': '' }
+    default_data = { "bin-path": BIN_PATH, "src-path": SRC_PATH, "sources": [f"main.{tc.extension}"], "out": default_out }
     
     if toolchain == 'c':
         default_data['comp'] = { "toolchain": tc.toolchain }
@@ -77,8 +74,13 @@ def get_build_config():
             data = json.load(f)
             return data
 
+def get_out_path(config, ot):
+    bin_path = config['bin-path']
+    out = config['out'][ot]
+    return bin_path + out
+
 def init_dirs(config):
-    dirs = [ config['src-path'], config['bin-path'] ]
+    dirs = [ config['src-path'], config['bin-path'], get_out_path(config, 'obj-path') ]
     for dir in dirs:
         if not path.exists(dir): os.makedirs(dir)
 
@@ -93,11 +95,6 @@ def initialize(toolchain):
     if not path.exists(SRC_PATH + "main.cpp"): write_starter_code(toolchain)
     quit()
 
-def get_out_path(config, ot):
-    bin_path = config['bin-path']
-    out = config['out'][ot]
-    return bin_path + out
-
 def get_tool_chain(config):
     if 'comp' in config:
         comp = config['comp']
@@ -107,41 +104,68 @@ def get_tool_chain(config):
         return tool if tool in valid_toolchains else 'g++', flags.split(' ')
     return 'g++', []
 
-
 def execute_in_shell(cmd, show=True):
     if show: pmsg(" ".join(cmd))
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     _, error = process.communicate()
-    if error: print(error)
+    if error: perror(error)
+
+def just_filename(file_path):
+    file = file_path.split('/')[-1]
+    return file.rsplit('.', 1)[0]
+
+def compile_o(sources, bash_cmd, src_path, obj_path):
+    objs = []
+    for source_file in sources:
+        source_with_path = src_path + source_file
+        cmd = bash_cmd.copy()
+        if path.exists(source_with_path):
+            o_path = f"{obj_path}{just_filename(source_with_path)}.o"
+            objs.append(o_path)
+            cmd.extend([ source_with_path, '-c', '-o', o_path ])
+            execute_in_shell(cmd)
+        else:
+            pwarn(f"'{source_with_path}' does not exist. Not adding to compilation.")
+    return objs
 
 def compile(config):
     # Build order is reversed in json config to make adding cpp files easier
-    build_order = config['build-order']
-    build_order.reverse()
+    build_order = config['sources']
     src_path = config['src-path']
-    bin_out = get_out_path(config, OutType.FINAL)
+    obj_path = get_out_path(config, 'obj-path')
+    bin_out = get_out_path(config, 'FINAL')
 
     init_dirs(config)
     toolchain, flags = get_tool_chain(config)
 
     bash_cmd = [toolchain, *flags]
     if '' in flags: bash_cmd.remove('')
-    for source_file in build_order:
-        source_with_path = src_path + source_file
-        if path.exists(source_with_path):
-            bash_cmd.append(source_with_path)
-        else:
-            pwarn(f"'{source_with_path}' does not exists. Not adding to compilation.")
-    bash_cmd.extend(['-o', bin_out])
+    
+    compiled = compile_o(build_order, bash_cmd, src_path, obj_path)
+    if not compiled:
+        perror("Not sources to compile.")
+        quit()
+    
+    bash_cmd.extend([*compiled, '-o', bin_out])
+    
 
-    if len(bash_cmd) <= 3: quit() # Quit if no cpp files added to path
+    # for source_file in build_order:
+    #     source_with_path = src_path + source_file
+    #     if path.exists(source_with_path):
+    #         bash_cmd.append(source_with_path)
+    #     else:
+    #         pwarn(f"'{source_with_path}' does not exists. Not adding to compilation.")
+    # bash_cmd.extend(['-o', bin_out])
+
+    # if len(bash_cmd) <= 3: quit() # Quit if no cpp files added to path
 
     execute_in_shell(bash_cmd)
     if path.exists(bin_out):
         execute_in_shell(['chmod', '+x', bin_out], show=False)
 
-def run_project(config):
-    os.system('./' + get_out_path(config, OutType.FINAL))
+def run_project(config, args):
+    cmd = f"./{get_out_path(config, 'FINAL')} {' '.join(args)}" # ./{out} [args...]
+    os.system(cmd)
 
 ################################
 #=======>-----MAIN-----<=======#
@@ -151,10 +175,10 @@ def main():
     parser.add_argument(*prefixed('v', 'version'), action='version', version="BuildMeC " + VERSION)
     parser.add_argument(*prefixed('i', 'init'), nargs='?', const='cpp', choices=TOOLCHAINS.keys(), help="Creates the buildmec.json config file.")
     parser.add_argument(*prefixed('c', 'compile'), action='store_true', help="Creates an object file inside the specified bin directory.")
-    parser.add_argument(*prefixed('r', 'run'), action="store_true", default=False, help="Runs binary.")
+    parser.add_argument(*prefixed('r', 'run'), nargs='*', default=False, help="Runs binary.")
 
     args = parser.parse_args()
-    
+
     if args.init:
         initialize(args.init.lower())
 
@@ -164,8 +188,8 @@ def main():
         compile(config)
 
     # == RUN AFTER ALL OPERATIONS == #
-    if args.run:
-        run_project(config)
+    if args.run != False:
+        run_project(config, args.run)
 
 if __name__ == "__main__":
     main()
