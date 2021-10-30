@@ -147,17 +147,6 @@ def compile(config):
         quit()
     
     bash_cmd.extend([*compiled, '-o', bin_out])
-    
-
-    # for source_file in build_order:
-    #     source_with_path = src_path + source_file
-    #     if path.exists(source_with_path):
-    #         bash_cmd.append(source_with_path)
-    #     else:
-    #         pwarn(f"'{source_with_path}' does not exists. Not adding to compilation.")
-    # bash_cmd.extend(['-o', bin_out])
-
-    # if len(bash_cmd) <= 3: quit() # Quit if no cpp files added to path
 
     execute_in_shell(bash_cmd)
     if path.exists(bin_out):
