@@ -26,7 +26,7 @@ TOOLCHAINS = {
 CONFIG_NAME = "buildmec.json"
 BIN_PATH    = "bin/"
 SRC_PATH    = "src/"
-VERSION     = "1.1"
+VERSION     = "1.1.1"
 
 PREFIX = '-' if platform != 'win32' else '/'
 prefixed = lambda short, full: [PREFIX + short, (PREFIX*2) + full]
@@ -137,16 +137,16 @@ def compile(config):
 
     init_dirs(config)
     toolchain, flags = get_tool_chain(config)
+    if '' in flags: flags.remove('')
 
-    bash_cmd = [toolchain, *flags]
-    if '' in flags: bash_cmd.remove('')
+    bash_cmd = [toolchain] # Toolchain without flags
     
     compiled = compile_o(build_order, bash_cmd, src_path, obj_path)
     if not compiled:
         perror("Not sources to compile.")
         quit()
     
-    bash_cmd.extend([*compiled, '-o', bin_out])
+    bash_cmd.extend([*compiled, *flags, '-o', bin_out])
 
     execute_in_shell(bash_cmd)
     if path.exists(bin_out):
